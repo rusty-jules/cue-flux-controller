@@ -255,18 +255,22 @@ func applyGitRepository(objKey client.ObjectKey, artifactName string, revision s
 		},
 	}
 
+	owner := client.FieldOwner("kustomize-controller")
 	opt := []client.PatchOption{
 		client.ForceOwnership,
-		client.FieldOwner("kustomize-controller"),
+		owner,
 	}
 
 	if err := k8sClient.Patch(context.Background(), repo, client.Apply, opt...); err != nil {
 		return err
 	}
 
+	subOpts := []client.SubResourcePatchOption{
+		owner,
+	}
 	repo.ManagedFields = nil
 	repo.Status = status
-	if err := k8sClient.Status().Patch(context.Background(), repo, client.Apply, opt...); err != nil {
+	if err := k8sClient.Status().Patch(context.Background(), repo, client.Apply, subOpts...); err != nil {
 		return err
 	}
 	return nil

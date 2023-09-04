@@ -22,6 +22,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"net/url"
@@ -797,7 +798,7 @@ func (r *CueInstanceReconciler) apply(ctx context.Context, manager *ssa.Resource
 	}
 
 	applyOpts := ssa.DefaultApplyOptions()
-	applyOpts.Exclusions = map[string]string{
+	applyOpts.ExclusionSelector = map[string]string{
 		fmt.Sprintf("%s/reconcile", cuev1alpha1.GroupVersion.Group): cuev1alpha1.DisabledValue,
 	}
 
@@ -831,7 +832,7 @@ func (r *CueInstanceReconciler) apply(ctx context.Context, manager *ssa.Resource
 		if changeSet != nil && len(changeSet.Entries) > 0 {
 			log.Info("server-side apply completed", "output", changeSet.ToMap())
 			for _, change := range changeSet.Entries {
-				if change.Action != string(ssa.UnchangedAction) {
+				if change.Action != ssa.UnchangedAction {
 					changeSetLog.WriteString(change.String() + "\n")
 				}
 			}
@@ -857,7 +858,7 @@ func (r *CueInstanceReconciler) apply(ctx context.Context, manager *ssa.Resource
 		if changeSet != nil && len(changeSet.Entries) > 0 {
 			log.Info("server-side apply completed", "output", changeSet.ToMap())
 			for _, change := range changeSet.Entries {
-				if change.Action != string(ssa.UnchangedAction) {
+				if change.Action != ssa.UnchangedAction {
 					changeSetLog.WriteString(change.String() + "\n")
 				}
 			}
@@ -947,11 +948,36 @@ func (r *CueInstanceReconciler) download(artifact *sourcev1.Artifact, tmpDir str
 }
 
 func (r *CueInstanceReconciler) verifyArtifact(artifact *sourcev1.Artifact, buf *bytes.Buffer, reader io.Reader) error {
-	hasher := sha256.New()
+	var hasher hash.Hash
+	var algorithm, checksum string
 
-	// for backwards compatibility with source-controller v0.17.2 and older
 	if len(artifact.Checksum) == 40 {
 		hasher = sha1.New()
+		checksum = artifact.Checksum
+	} else if len(artifact.Checksum) == 64 {
+		hasher = sha256.New()
+		checksum = artifact.Checksum
+	} else {
+		// compatible with source.toolkit.fluxcd.io/v1 only
+		for i, v := range strings.Split(artifact.Digest, ":") {
+			switch i {
+			case 0:
+				algorithm = v
+			case 1:
+				checksum = v
+			default:
+				return fmt.Errorf("failed to verify artifact: artifact digest does not match form '<algorithm>:<checksum>'")
+			}
+		}
+
+		switch algorithm {
+		case "sha1":
+			hasher = sha1.New()
+		case "sha256":
+			hasher = sha256.New()
+		default:
+			return fmt.Errorf("failed to verify artifact: unknown checksum algorithm '%s'", algorithm)
+		}
 	}
 
 	// compute checksum
@@ -960,9 +986,9 @@ func (r *CueInstanceReconciler) verifyArtifact(artifact *sourcev1.Artifact, buf 
 		return err
 	}
 
-	if checksum := fmt.Sprintf("%x", hasher.Sum(nil)); checksum != artifact.Checksum {
+	if computedChecksum := fmt.Sprintf("%x", hasher.Sum(nil)); computedChecksum != checksum {
 		return fmt.Errorf("failed to verify artifact: computed checksum '%s' doesn't match advertised '%s'",
-			checksum, artifact.Checksum)
+			computedChecksum, checksum)
 	}
 
 	return nil
