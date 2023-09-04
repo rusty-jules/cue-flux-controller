@@ -527,7 +527,7 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 	cfg := &load.Config{
 		ModuleRoot: root,
 		Dir:        dir,
-		DataFiles:  true, //TODO: this could be configurable
+		DataFiles:  false, //TODO: this could be configurable
 		Tags:       tags,
 		TagVars:    tagVars,
 	}
