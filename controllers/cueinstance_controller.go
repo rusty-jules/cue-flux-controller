@@ -716,6 +716,10 @@ func (r *CueInstanceReconciler) checkGates(ctx context.Context,
 	revision, root, dir string,
 	instance *cuev1alpha1.CueInstance,
 ) error {
+	if len(instance.Spec.Gates) == 0 {
+		return nil
+	}
+
 	log := ctrl.LoggerFrom(ctx)
 	cctx := cuecontext.New()
 
