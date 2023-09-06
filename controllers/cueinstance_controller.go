@@ -479,8 +479,8 @@ func (r *CueInstanceReconciler) reconcile(
 		), err
 	}
 
-    // run garbage collection in cache, keeping only the two most recent artifact's resources
-    cache.gc(2)
+	// run garbage collection in cache, keeping only the two most recent artifact's resources
+	cache.gc(2)
 
 	// health assessment
 	if err := r.checkHealth(ctx, resourceManager, cueInstance, revision, drifted, changeSet.ToObjMetadataSet()); err != nil {
@@ -508,14 +508,14 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 ) ([]byte, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-    // get the cache
-    cacheKey := cache.cacheKey(revision, instance)
-    if result, err := cache.getInstance(cacheKey); err != nil {
-        log.Info(fmt.Sprintf("Cache miss for %s, '%s', building cue instance", cacheKey, err))
-    } else {
-        log.Info(fmt.Sprintf("Cache hit for %s", cacheKey))
-        return result, nil
-    }
+	// get the cache
+	cacheKey := cache.cacheKey(revision, instance)
+	if result, err := cache.getInstance(cacheKey); err != nil {
+		log.Info(fmt.Sprintf("Cache miss for %s, '%s', building cue instance", cacheKey, err))
+	} else {
+		log.Info(fmt.Sprintf("Cache hit for %s", cacheKey))
+		return result, nil
+	}
 
 	cctx := cuecontext.New()
 
@@ -707,7 +707,7 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 		}
 	}
 
-    cache.insertInstance(&result, cacheKey)
+	cache.insertInstance(&result, cacheKey)
 
 	return result.Bytes(), nil
 }
@@ -959,10 +959,10 @@ func (r *CueInstanceReconciler) download(artifact *sourcev1.Artifact, tmpDir str
 		return fmt.Errorf("failed to untar artifact, error: %w", err)
 	}
 
-    // create cache index
-    if err = cache.createIndex(artifact); err != nil {
-        return fmt.Errorf("failed to crate cache index for artifact, error: %w", err)
-    }
+	// create cache index
+	if err = cache.createIndex(artifact); err != nil {
+		return fmt.Errorf("failed to crate cache index for artifact, error: %w", err)
+	}
 
 	return nil
 }
