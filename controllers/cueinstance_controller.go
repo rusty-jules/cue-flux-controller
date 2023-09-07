@@ -576,6 +576,18 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 				return nil, err
 			}
 
+			if instance.Spec.PostBuild != nil {
+				sub, err := SubstituteVariables(ctx, r.Client, instance, &expr, data, false)
+				if err != nil {
+					name, err := value.LookupPath(cue.ParsePath("metadata.name")).String()
+					if err != nil {
+						name = "metadata.name not defined"
+					}
+					return nil, fmt.Errorf("var substitution failed for '%s': %w", name, err)
+				}
+				data = sub
+			}
+
 			if shouldValidate && instance.Spec.Validate.Type == "cue" {
 				schema := value.LookupPath(cue.ParsePath(instance.Spec.Validate.Schema))
 				schema.Unify(expr)
@@ -607,6 +619,18 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 		data, err := cueEncodeYAML(value)
 		if err != nil {
 			return nil, err
+		}
+
+		if instance.Spec.PostBuild != nil {
+			sub, err := SubstituteVariables(ctx, r.Client, instance, &value, data, false)
+			if err != nil {
+				name, err := value.LookupPath(cue.ParsePath("metadata.name")).String()
+				if err != nil {
+					name = "metadata.name not defined"
+				}
+				return nil, fmt.Errorf("var substitution failed for '%s': %w", name, err)
+			}
+			data = sub
 		}
 
 		valid := false
@@ -652,7 +676,8 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 					return nil, err
 				}
 				for l.Next() {
-					data, err := yaml.Encode(l.Value())
+					lv := l.Value()
+					data, err := yaml.Encode(lv)
 					if err != nil {
 						return nil, err
 					}
@@ -674,6 +699,17 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 								log.Info(msg)
 							}
 						}
+					}
+					if instance.Spec.PostBuild != nil {
+						sub, err := SubstituteVariables(ctx, r.Client, instance, &lv, data, false)
+						if err != nil {
+							name, err := value.LookupPath(cue.ParsePath("metadata.name")).String()
+							if err != nil {
+								name = "metadata.name not defined"
+							}
+							return nil, fmt.Errorf("var substitution failed for '%s': %w", name, err)
+						}
+						data = sub
 					}
 					result.Write(data)
 					result.Write([]byte("\n---\n"))
@@ -700,6 +736,17 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 							log.Info(msg)
 						}
 					}
+				}
+				if instance.Spec.PostBuild != nil {
+					sub, err := SubstituteVariables(ctx, r.Client, instance, &f, data, false)
+					if err != nil {
+						name, err := value.LookupPath(cue.ParsePath("metadata.name")).String()
+						if err != nil {
+							name = "metadata.name not defined"
+						}
+						return nil, fmt.Errorf("var substitution failed for '%s': %w", name, err)
+					}
+					data = sub
 				}
 				result.Write(data)
 				result.Write([]byte("\n---\n"))

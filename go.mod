@@ -5,6 +5,7 @@ go 1.19
 require (
 	cuelang.org/go v0.6.0
 	github.com/cyphar/filepath-securejoin v0.2.3
+	github.com/drone/envsubst v1.0.3
 	github.com/fluxcd/pkg/apis/meta v0.19.0
 	github.com/fluxcd/pkg/runtime v0.13.2
 	github.com/fluxcd/pkg/ssa v0.24.1
@@ -14,6 +15,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.0
 	github.com/onsi/gomega v1.24.1
 	github.com/spf13/pflag v1.0.5
+	github.com/tidwall/buntdb v1.3.0
 	k8s.io/api v0.26.1
 	k8s.io/apimachinery v0.26.1
 	k8s.io/client-go v0.26.1
@@ -81,7 +83,6 @@ require (
 	github.com/russross/blackfriday v1.5.2 // indirect
 	github.com/spf13/cobra v1.7.0 // indirect
 	github.com/tidwall/btree v1.4.2 // indirect
-	github.com/tidwall/buntdb v1.3.0 // indirect
 	github.com/tidwall/gjson v1.14.3 // indirect
 	github.com/tidwall/grect v0.1.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
