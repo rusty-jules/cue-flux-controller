@@ -43,7 +43,7 @@ func (i *CueInstanceIndex) name() string {
 	return i.revision
 }
 
-func (i CueInstanceIndex) filter() string {
+func (i *CueInstanceIndex) filter() string {
 	return fmt.Sprintf(idxFilterFmt, i.revision)
 }
 
