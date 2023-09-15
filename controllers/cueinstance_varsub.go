@@ -57,20 +57,20 @@ func SubstituteVariables(
     resData []byte,
 	dryRun bool) ([]byte, error) {
 
-    for _, annotation := range []string{"metadata.labels", "metadata.annotations"} {
-        meta, err := expr.LookupPath(cue.ParsePath(annotation)).Struct()
-        if err == nil {
-            subAnnotation, err := meta.FieldByName(substituteAnnotationKey, false)
-            if err == nil {
-                subAnnotationValue, err := subAnnotation.Value.String()
-                if err == nil {
-                    if subAnnotationValue == DisabledValue {
-                        return nil, nil
-                    }
-                }
-            }
-        }
-    }
+    //for _, annotation := range []string{"metadata.labels", "metadata.annotations"} {
+        //meta, err := expr.LookupPath(cue.ParsePath(annotation)).Struct()
+        //if err == nil {
+            //subAnnotation, err := meta.FieldByName(substituteAnnotationKey, false)
+            //if err == nil {
+                //subAnnotationValue, err := subAnnotation.Value.String()
+                //if err == nil {
+                    //if subAnnotationValue == DisabledValue {
+                        //return nil, nil
+                    //}
+                //}
+            //}
+        //}
+    //}
 
 	// load vars from ConfigMaps and Secrets data keys
 	// In dryRun mode this step is skipped. This might in different kind of errors.
