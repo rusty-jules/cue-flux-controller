@@ -22,6 +22,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"net/url"
@@ -478,6 +479,9 @@ func (r *CueInstanceReconciler) reconcile(
 		), err
 	}
 
+    // run garbage collection in cache, keeping only the two most recent artifact's resources
+    cache.gc(2)
+
 	// health assessment
 	if err := r.checkHealth(ctx, resourceManager, cueInstance, revision, drifted, changeSet.ToObjMetadataSet()); err != nil {
 		return cuev1alpha1.CueInstanceNotReadyInventory(
@@ -503,6 +507,16 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 	instance *cuev1alpha1.CueInstance,
 ) ([]byte, error) {
 	log := ctrl.LoggerFrom(ctx)
+
+    // get the cache
+    cacheKey := cache.cacheKey(revision, instance)
+    if result, err := cache.getInstance(cacheKey); err != nil {
+        log.Info(fmt.Sprintf("Cache miss for %s, '%s', building cue instance", cacheKey, err))
+    } else {
+        log.Info(fmt.Sprintf("Cache hit for %s", cacheKey))
+        return result, nil
+    }
+
 	cctx := cuecontext.New()
 
 	tags := make([]string, 0, len(instance.Spec.Tags))
@@ -526,7 +540,7 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 	cfg := &load.Config{
 		ModuleRoot: root,
 		Dir:        dir,
-		DataFiles:  true, //TODO: this could be configurable
+		DataFiles:  false, //TODO: this could be configurable
 		Tags:       tags,
 		TagVars:    tagVars,
 	}
@@ -562,6 +576,18 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 				return nil, err
 			}
 
+            if instance.Spec.PostBuild != nil {
+                sub, err := SubstituteVariables(ctx, r.Client, instance, &expr, data, false)
+                if err != nil {
+                    name, err := value.LookupPath(cue.ParsePath("metadata.name")).String()
+                    if err != nil {
+                        name = "metadata.name not defined"
+                    }
+                    return nil, fmt.Errorf("var substitution failed for '%s': %w", name, err)
+                }
+                data = sub
+            }
+
 			if shouldValidate && instance.Spec.Validate.Type == "cue" {
 				schema := value.LookupPath(cue.ParsePath(instance.Spec.Validate.Schema))
 				schema.Unify(expr)
@@ -594,6 +620,18 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
+
+        if instance.Spec.PostBuild != nil {
+            sub, err := SubstituteVariables(ctx, r.Client, instance, &value, data, false)
+            if err != nil {
+                name, err := value.LookupPath(cue.ParsePath("metadata.name")).String()
+                if err != nil {
+                    name = "metadata.name not defined"
+                }
+                return nil, fmt.Errorf("var substitution failed for '%s': %w", name, err)
+            }
+            data = sub
+        }
 
 		valid := false
 
@@ -638,7 +676,8 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 					return nil, err
 				}
 				for l.Next() {
-					data, err := yaml.Encode(l.Value())
+                    lv := l.Value()
+					data, err := yaml.Encode(lv)
 					if err != nil {
 						return nil, err
 					}
@@ -661,6 +700,17 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 							}
 						}
 					}
+                    if instance.Spec.PostBuild != nil {
+                        sub, err := SubstituteVariables(ctx, r.Client, instance, &lv, data, false)
+                        if err != nil {
+                            name, err := value.LookupPath(cue.ParsePath("metadata.name")).String()
+                            if err != nil {
+                                name = "metadata.name not defined"
+                            }
+                            return nil, fmt.Errorf("var substitution failed for '%s': %w", name, err)
+                        }
+                        data = sub
+                    }
 					result.Write(data)
 					result.Write([]byte("\n---\n"))
 				}
@@ -687,11 +737,24 @@ func (r *CueInstanceReconciler) build(ctx context.Context,
 						}
 					}
 				}
+                if instance.Spec.PostBuild != nil {
+                    sub, err := SubstituteVariables(ctx, r.Client, instance, &f, data, false)
+                    if err != nil {
+                        name, err := value.LookupPath(cue.ParsePath("metadata.name")).String()
+                        if err != nil {
+                            name = "metadata.name not defined"
+                        }
+                        return nil, fmt.Errorf("var substitution failed for '%s': %w", name, err)
+                    }
+                    data = sub
+                }
 				result.Write(data)
 				result.Write([]byte("\n---\n"))
 			}
 		}
 	}
+
+    cache.insertInstance(&result, cacheKey)
 
 	return result.Bytes(), nil
 }
@@ -700,6 +763,10 @@ func (r *CueInstanceReconciler) checkGates(ctx context.Context,
 	revision, root, dir string,
 	instance *cuev1alpha1.CueInstance,
 ) error {
+    if len(instance.Spec.Gates) == 0 {
+        return nil
+    }
+
 	log := ctrl.LoggerFrom(ctx)
 	cctx := cuecontext.New()
 
@@ -797,7 +864,7 @@ func (r *CueInstanceReconciler) apply(ctx context.Context, manager *ssa.Resource
 	}
 
 	applyOpts := ssa.DefaultApplyOptions()
-	applyOpts.Exclusions = map[string]string{
+	applyOpts.ExclusionSelector = map[string]string{
 		fmt.Sprintf("%s/reconcile", cuev1alpha1.GroupVersion.Group): cuev1alpha1.DisabledValue,
 	}
 
@@ -831,7 +898,7 @@ func (r *CueInstanceReconciler) apply(ctx context.Context, manager *ssa.Resource
 		if changeSet != nil && len(changeSet.Entries) > 0 {
 			log.Info("server-side apply completed", "output", changeSet.ToMap())
 			for _, change := range changeSet.Entries {
-				if change.Action != string(ssa.UnchangedAction) {
+				if change.Action != ssa.UnchangedAction {
 					changeSetLog.WriteString(change.String() + "\n")
 				}
 			}
@@ -857,7 +924,7 @@ func (r *CueInstanceReconciler) apply(ctx context.Context, manager *ssa.Resource
 		if changeSet != nil && len(changeSet.Entries) > 0 {
 			log.Info("server-side apply completed", "output", changeSet.ToMap())
 			for _, change := range changeSet.Entries {
-				if change.Action != string(ssa.UnchangedAction) {
+				if change.Action != ssa.UnchangedAction {
 					changeSetLog.WriteString(change.String() + "\n")
 				}
 			}
@@ -943,15 +1010,45 @@ func (r *CueInstanceReconciler) download(artifact *sourcev1.Artifact, tmpDir str
 		return fmt.Errorf("failed to untar artifact, error: %w", err)
 	}
 
+    // create cache index
+    if err = cache.createIndex(artifact); err != nil {
+        return fmt.Errorf("failed to crate cache index for artifact, error: %w", err)
+    }
+
 	return nil
 }
 
 func (r *CueInstanceReconciler) verifyArtifact(artifact *sourcev1.Artifact, buf *bytes.Buffer, reader io.Reader) error {
-	hasher := sha256.New()
+	var hasher hash.Hash
+	var algorithm, checksum string
 
-	// for backwards compatibility with source-controller v0.17.2 and older
 	if len(artifact.Checksum) == 40 {
 		hasher = sha1.New()
+		checksum = artifact.Checksum
+	} else if len(artifact.Checksum) == 64 {
+		hasher = sha256.New()
+		checksum = artifact.Checksum
+	} else {
+		// compatible with source.toolkit.fluxcd.io/v1 only
+		for i, v := range strings.Split(artifact.Digest, ":") {
+			switch i {
+			case 0:
+				algorithm = v
+			case 1:
+				checksum = v
+			default:
+				return fmt.Errorf("failed to verify artifact: artifact digest does not match form '<algorithm>:<checksum>'")
+			}
+		}
+
+		switch algorithm {
+		case "sha1":
+			hasher = sha1.New()
+		case "sha256":
+			hasher = sha256.New()
+		default:
+			return fmt.Errorf("failed to verify artifact: unknown checksum algorithm '%s'", algorithm)
+		}
 	}
 
 	// compute checksum
@@ -960,9 +1057,9 @@ func (r *CueInstanceReconciler) verifyArtifact(artifact *sourcev1.Artifact, buf 
 		return err
 	}
 
-	if checksum := fmt.Sprintf("%x", hasher.Sum(nil)); checksum != artifact.Checksum {
+	if computedChecksum := fmt.Sprintf("%x", hasher.Sum(nil)); computedChecksum != checksum {
 		return fmt.Errorf("failed to verify artifact: computed checksum '%s' doesn't match advertised '%s'",
-			checksum, artifact.Checksum)
+			computedChecksum, checksum)
 	}
 
 	return nil

@@ -164,7 +164,7 @@ func (ci *CueInstanceImpersonation) clientForServiceAccountOrDefault() (client.C
 		return nil, nil, err
 	}
 
-	statusPoller := polling.NewStatusPoller(client, restMapper, nil)
+	statusPoller := polling.NewStatusPoller(client, restMapper, polling.Options{})
 	return client, statusPoller, err
 
 }
@@ -191,7 +191,7 @@ func (ci *CueInstanceImpersonation) clientForKubeConfig(ctx context.Context) (cl
 		return nil, nil, err
 	}
 
-	statusPoller := polling.NewStatusPoller(client, restMapper, nil)
+	statusPoller := polling.NewStatusPoller(client, restMapper, polling.Options{})
 
 	return client, statusPoller, err
 }
