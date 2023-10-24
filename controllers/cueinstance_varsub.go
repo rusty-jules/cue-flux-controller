@@ -86,7 +86,9 @@ func SubstituteVariables(
 
 	// run bash variable substitutions
 	if len(vars) > 0 {
-		res, err := varSubstitution(resData, vars)
+        d, err := cueEncodeYAML(*expr)
+		res, err := varSubstitution(d, vars)
+		//res, err := varSubstitution(resData, vars)
 		if err != nil {
 			return nil, fmt.Errorf("YAMLToJSON: %w", err)
 		}
